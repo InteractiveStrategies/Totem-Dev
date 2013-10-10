@@ -1,0 +1,368 @@
+<?php
+/**
+ * @file
+ * totem_activity.module
+ */
+
+require_once 'totem_activity.features.inc';
+require_once 'includes/totem_activity.theme.inc';
+require_once 'includes/totem_activity.block.inc';
+require_once 'includes/totem_activity.form.inc';
+
+// Private helper functions.
+/**
+ * Helper function to retrieve user's flagged entity_id values per flag name.
+ */
+function _totem_activity_get_flagged_entity_id($flag_name, $entity_type = 'node', $account = NULL) {
+
+  global $user;
+  if (empty($account)) {
+    $account = $user;
+  }
+
+  // Get user's flagged entity_ids.
+  $entity_id = flag_get_user_flags($entity_type, NULL, $account->uid);
+  if (!array_key_exists($flag_name, $entity_id)) {
+    $entity_id = NULL;
+  }
+  else {
+    $entity_id = array_keys($entity_id[$flag_name]);
+  }
+
+  return $entity_id;
+}
+
+// Hook implementations.
+/**
+ * Implements hook_flag_alter().
+ */
+function totem_activity_flag_alter(&$flag) {
+  if ($flag->name == 'subscribe_node') {
+    // The subscribe flag defined in the exported feature hardcodes all core
+    // Totem node types that we wish to be "subscribe-able". So, remove any
+    // node types defined by disabled Totem sub-modules. See latter link
+    // regarding lack of a hook specifically for altering "default" flags.
+    // @see totem_activity_flag_default_flags(), http://drupal.org/node/495388
+    _totem_common_filter_node_types_to_enabled($flag->types);
+  }
+}
+/**
+ * Implements hook_entity_info_alter().
+ */
+function totem_activity_entity_info_alter(&$entity_info) {
+  $entity_info['node']['view modes']['recent_entity'] = array(
+    'label' => t("Recent Entity"),
+    'custom settings' => TRUE,
+  );
+
+  $entity_info['comment']['view modes']['recent_entity'] = array(
+    'label' => t("Recent Entity"),
+    'custom settings' => FALSE,
+  );
+}
+/**
+ * Implements hook_theme().
+ */
+function totem_activity_theme() {
+
+  $items = array(
+    'totem_activity_recent_entity' => array(
+      'template' => 'theme/totem-activity-recent-entity',
+      'file' => 'includes/totem_activity.theme.inc',
+      'variables' => array(),
+    ),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_contextual_links_view_alter().
+ */
+function totem_activity_contextual_links_view_alter(&$element, $items) {
+  if (isset($element['#links']['flag-subscribe_node'])) {
+   // If node is set to private, remove Subscribe link. No need to subscribe
+   // to content that only you can view anyway.
+   if ($element['#element']['#node']->status == FALSE) {
+     unset($element['#links']['flag-subscribe_node']);
+   }
+  }
+}
+
+// Hook implementations (Features).
+/**
+ * Implements hook_node_community_ENTITY_TYPE().
+ *
+ * @todo Optimize? There are 4 queries in here - might be good to return early
+ * if no results along the way.
+ */
+function totem_activity_node_community_recent($vars) {
+
+  // Since totem_activity_user_community_recent() invokes this directly,
+  // check if $nid_community is specified in vars a la that case.
+  $nid_community = (!empty($vars['nid_community']) ? $vars['nid_community'] : $vars['node']->nid);
+
+  // Get node types added by Feature mods.
+  $bundle = array();
+  $types = _totem_common_node_types();
+  if (!empty($types)) {
+    foreach ($types as $type) {
+      $bundle[] = $type->type;
+    }
+  }
+
+  // Initial query for recent nodes.
+  $efq_params_nodes = array(
+    'return' => (!empty($vars['return']) ? $vars['return'] : 'entity_id'),
+    'entity_type' => 'node',
+    'bundle' => $bundle,
+    'property_conditions' => array(
+      array('column' => 'status', 'value' => 1),
+    ),
+    'field_conditions' => array(
+      array(
+        'field' => 'field_community',
+        'column' => 'target_id',
+        'value' => $nid_community,
+      ),
+    ),
+    // Order by creation timestamp so activity language makes sense.
+    'property_order_by' => array(
+      array('column' => 'created', 'direction' => 'DESC'),
+    ),
+  );
+
+  // Filter by author if needed by totem_activity_user_community_recent().
+  if (!empty($vars['author_uid'])) {
+    $efq_params_nodes['property_conditions'][] = array('column' => 'uid', 'value' => $vars['author_uid']);
+  }
+
+  // Allow modules to alter params.
+  $efq_param_type = 'recent';
+  drupal_alter('totem_common_EFQ_params', $efq_params_nodes, $efq_param_type);
+
+  $recent_nids = _totem_common_efq($efq_params_nodes)->results;
+
+  // Comments do not have a field for which community they're in,
+  // so we cannot pass such a parameter directly to our EFQ wrapper.
+  // Thus, first find the x most-recently-commented-on nodes.
+  // This set always includes *at least* the nodes with x most recent comments.
+  $efq_params_nodes_comments = array_merge($efq_params_nodes,
+    array(
+      'return' => 'entity_id',
+      // Remove sort by node creation time.
+      'property_order_by' => array(),
+      // Remove author uid condition.
+      'property_conditions' => array(
+        array('column' => 'status', 'value' => 1),
+      ),
+      // Will add sort by node_comment_statistics.last_comment_timestamp.
+      'tags' => array(
+        'NODES_LAST_COMMENTED',
+      ),
+    )
+  );
+
+  // Filter by author if needed by totem_activity_user_community_recent().
+  if (!empty($vars['author_uid'])) {
+    $efq_params_nodes_comments['property_conditions'][] = array('column' => 'uid', 'value' => $vars['author_uid']);
+  }
+
+  // Allow modules to alter params.
+  $efq_param_type = 'recent';
+  drupal_alter('totem_common_EFQ_params', $efq_params_nodes_comments, $efq_param_type);
+
+  $nids_comments = _totem_common_efq($efq_params_nodes_comments)->results;
+
+  // Now retrieve the actual most recent comments in this community.
+  // Note: 'bundle' does not apply to queries where 'entity_type' is not 'node'
+  // (see totem_common.efq.inc.), but we've taken care of limiting to comments
+  // on the desired set of node types via the above query.
+  $efq_params_comments = array(
+    'return' => (!empty($vars['return']) ? $vars['return'] : 'entity_id'),
+    'entity_type' => 'comment',
+    'property_conditions' => array(
+      array('column' => 'nid', 'value' => (empty($nids_comments) ? array(0) : $nids_comments)),
+    ),
+    // Order by creation timestamp so activity language makes sense.
+    'property_order_by' => array(
+      array('column' => 'created', 'direction' => 'DESC'),
+    ),
+  );
+
+  // Allow modules to alter params.
+  $efq_param_type = 'recent';
+  drupal_alter('totem_common_EFQ_params', $efq_params_comments, $efq_param_type);
+
+  $recent_cids = _totem_common_efq($efq_params_comments)->results;
+
+  // Build query to select recent nodes and comments together, ordered by
+  // creation timestamp.
+  $entities_query_vars = array(
+    'entity_type' => array('node', 'comment'),
+    // Query function checks if these arrays are empty and sets a value of '0'
+    // if so.
+    'placeholders' => array(
+      ':entity_id_node' => $recent_nids,
+      ':entity_id_comment' => $recent_cids,
+    ),
+    'limit' => (!empty($vars['page_limit']) ? $vars['page_limit'] : PAGE_SIZE_LISTS_PAGE),
+    'order_by' => 'ORDER BY pool.created DESC',
+  );
+
+  $entities_query_data = _totem_common_entity_range_query($entities_query_vars);
+
+  // Make sure we always have return arg.
+  if (empty($vars['return'])) {
+    $vars['return'] = 'renderable';
+  }
+
+  // Build renderable array of entity results.
+  $entities = array();
+  while ($row = $entities_query_data['query']->fetchAssoc()) {
+    switch ($row['entity_type']) {
+      case 'node':
+        switch ($vars['return']) {
+          case 'entity_id':
+            $entities[] = $row['entity_id'];
+            break;
+
+          case 'renderable':
+          default:
+            $entity = node_load($row['entity_id']);
+            $build = node_view($entity, 'recent_entity');
+            $entities[] = $build;
+            break;
+
+        }
+        break;
+
+      case 'comment':
+        switch ($vars['return']) {
+          case 'entity_id':
+            $entities[] = $row['entity_id'];
+            break;
+
+          case 'renderable':
+          default:
+            $entity = comment_load($row['entity_id']);
+            $build = comment_view($entity, node_load($entity->nid), 'recent_entity');
+            $entities[] = $build;
+            break;
+
+        }
+        break;
+    }
+  }
+
+  // Build an object structured like the EFQ wrapper, so that templates can
+  // render the results and pager in the same fashion as simple callbacks that
+  // return an EFQ wrapper object.
+  return array(
+    'entities' => array(
+      'query' => (object) array(
+        'results' => $entities,
+        'pager' => $entities_query_data['pager'],
+      ),
+    ),
+  );
+}
+/**
+ * Implements hook_user_community_ENTITY_TYPE().
+ */
+function totem_activity_user_community_recent($vars) {
+
+  global $user;
+
+  // Find the communities to which this user belongs.
+  $nid_community = _totem_common_get_field_entityreference_values('user', $vars['account'], 'field_community');
+  if (empty($nid_community)) {
+    return NULL;
+  }
+  $vars['nid_community'] = $nid_community;
+
+  // If viewing someone else's profile, we want to
+  // filter to only entities they have authored.
+  if ($user->uid !== $vars['account']->uid) {
+    // Indicate uid to be used for property_condition.
+    $vars['author_uid'] = $vars['account']->uid;
+  }
+
+  return module_invoke('totem_activity', 'node_community_recent', $vars);
+}
+/**
+ * Implements hook_totem_common_EFQ_params_alter().
+ */
+function totem_activity_totem_common_EFQ_params_alter(&$vars, $type) {
+
+  global $user;
+
+  if ($type !== 'recent') {
+    return FALSE;
+  }
+
+  $args = drupal_get_query_parameters();
+  if (!empty($args['recent'])) {
+
+    // User filtered "Recent Activity" list via dropdown.
+    if (is_numeric($args['recent'])) {
+      if (isset($vars['field_conditions'])) {
+        foreach ($vars['field_conditions'] as $i => $fc) {
+          if ($fc['field'] == 'field_community') {
+            $vars['field_conditions'][$i]['value'] = (int) $args['recent'];
+            break;
+          }
+        }
+      }
+    }
+    elseif ($args['recent'] == 'subscribed') {
+
+      $nid_subscribed = _totem_activity_get_flagged_entity_id('subscribe_node', 'node', $user);
+
+      // Filter "Recent Activity" list per user-defined subscription nids.
+      // Even if $nid_subscribed is empty, we pass it back so that the query
+      // will return no results.
+      $vars['nid_community'] = 0;
+      $vars['property_conditions'][] = array('column' => 'nid', 'value' => $nid_subscribed);
+
+      // Remove field_community condition.
+      if (isset($vars['field_conditions'])) {
+        foreach ($vars['field_conditions'] as $i => $fc) {
+          if ($fc['field'] == 'field_community') {
+            unset($vars['field_conditions'][$i]);
+          }
+        }
+      }
+    }
+
+  }
+}
+/**
+ * Implements hook_user_subscribed_ENTITY_TYPE().
+ */
+function totem_activity_user_subscribed_node($vars) {
+
+  // Get user's "subscribe_node" subscribed nids.
+  $nid_subscribed = _totem_activity_get_flagged_entity_id('subscribe_node', 'node', $vars['account']);
+  if (empty($nid_subscribed)) {
+    return NULL;
+  }
+
+  // Query for all subscribed nids per bundle arg.
+  $efq_params = array(
+    'entity_type' => 'node',
+    'bundle' => $vars['bundle'],
+    'property_conditions' => array(
+      array('column' => 'nid', 'value' => $nid_subscribed),
+    ),
+    'page_limit' => $vars['page_limit'],
+    'property_order_by' => array(
+      array('column' => 'changed', 'direction' => 'DESC'),
+    ),
+  );
+
+  $items['nodes'] = array(
+    'query' => _totem_common_efq($efq_params),
+  );
+
+  return $items;
+}

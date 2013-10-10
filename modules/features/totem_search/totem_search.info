@@ -1,0 +1,19 @@
+name = Totem Search
+description = Adds the Search feature to your installation profile.
+core = 7.x
+package = Totem
+php = 5.2.4
+dependencies[] = features
+dependencies[] = totem_common
+dependencies[] = totem_user
+dependencies[] = search
+features[features_api][] = api:1
+features[user_permission][] = search content
+features[user_permission][] = use advanced search
+
+; Information added by drupal.org packaging script on 2013-07-10
+version = "7.x-1.0-beta5"
+core = "7.x"
+project = "totem"
+datestamp = "1373421051"
+

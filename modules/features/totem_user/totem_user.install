@@ -1,0 +1,115 @@
+<?php
+/**
+ * @file
+ * totem_user.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function totem_user_install() {
+
+  // Set variables.
+  _totem_user_install_variables();
+  _totem_user_install_blocks();
+
+  // Give this module heaviest weight.
+  _totem_common_system_max_weight('totem_user');
+
+}
+
+// Installation tasks.
+/**
+ * TODO.
+ */
+function _totem_user_install_variables() {
+
+  $profile_intall_vars = variable_get('totem_install_temp_vars');
+
+  // Set variables.
+  // Allow visitors to create accounts w/o mail verification.
+  variable_set('user_register', USER_REGISTER_VISITORS);
+  variable_set('user_email_verification', FALSE);
+
+  // Enable user picture support and set default to a square thumbnail option.
+  variable_set('user_pictures', '1');
+  variable_set('user_picture_dimensions', '1024x1024');
+  variable_set('user_picture_file_size', '800');
+  variable_set('user_picture_style', 'user_thumb');
+
+  // Set up default picture as an unmanaged file.
+  $user_image_src_path = drupal_get_path('module', 'totem_user') . '/theme/img/default-user.png';
+  $user_image_dest_path = _totem_common_put_default_image($user_image_src_path, 'totem_user/default-user.png', FALSE);
+  if ($user_image_dest_path !== FALSE) {
+    variable_set('user_picture_default', $user_image_dest_path);
+  }
+
+  // Set Pathauto and Realname patterns.
+  variable_set('pathauto_user_pattern', 'members/[user:uid]');
+  variable_set('realname_pattern', '[user:field_name_first] [user:field_name_last]');
+
+  // Set FB OAuth vars.
+  variable_set('fboauth_id', '');
+  variable_set('fboauth_secret', '');
+  variable_set('fboauth_user_email', 1);
+  variable_set('fboauth_user_fields', array('field_name_first' => 'first_name', 'field_name_last' => 'last_name'));
+  variable_set('fboauth_user_picture', 'picture');
+  variable_set('fboauth_user_properties', array('email'));
+  variable_set('fboauth_user_username', 'name');
+
+  // Set Persistent Login vars.
+  variable_set('persistent_login_cookie_prefix', 'PERSISTENT_LOGIN_');
+  variable_set('persistent_login_history', '0');
+  variable_set('persistent_login_maxlife', '0');
+  variable_set('persistent_login_maxlogins', '5');
+  variable_set('persistent_login_pages', '');
+  variable_set('persistent_login_secure', '1');
+  variable_set('persistent_login_welcome', 0);
+
+  // Set Terms of Use vars.
+  variable_set('terms_of_use_checkbox_label', 'I agree to the @link');
+  variable_set('terms_of_use_fieldset_name', '');
+  variable_set('terms_of_use_node_id', $profile_intall_vars['nid_terms']);
+  variable_set('terms_of_use_node_title', 'Terms of Use');
+
+  // Add string translations.
+  _totem_common_set_custom_string('Log in', 'Sign in');
+  _totem_common_set_custom_string('E-mail', 'Email');
+
+  // Append full_html perms per new Moderator role.
+  user_role_grant_permissions(4, array('use text format full_html'));
+
+  // Add block_role records.
+  db_insert('block_role')
+    ->fields(array(
+      'module' => 'totem_user',
+      'delta' => 'user_forms',
+      'rid' => 1,
+    ))->execute();
+
+}
+/**
+ * TODO.
+ */
+function _totem_user_install_blocks() {
+
+  // Set custom content block content for totem_user:2.
+  db_insert('block_custom')
+    ->fields(array(
+      'bid' => 2,
+      'body' => st(''),
+      'info' => st('Member notification'),
+      'format' => 'full_html',
+    ))
+    ->execute();
+
+  // Add block_class records.
+  db_insert('block_class')
+    ->fields(array(
+      'module' => 'totem_user',
+      'delta' => '2',
+      'css_class' => 'profile-sys-notice',
+    ))
+    ->execute();
+
+}

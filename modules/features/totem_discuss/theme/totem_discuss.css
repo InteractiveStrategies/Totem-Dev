@@ -1,0 +1,14 @@
+form.node-topic-form .field-name-taxonomy-topics, form.node-topic-form .filter-wrapper, form.node-topic-form .vertical-tabs, form.node-topic-form .vertical-tabs-panes {
+  display: none;
+}
+
+form.comment-form .filter-wrapper, form#privatemsg-new .filter-wrapper {
+  display: none;
+}
+
+/*
+Hide token browser on private message form.
+*/
+form#privatemsg-new fieldset#edit-token {
+  display: none;
+}

@@ -1,0 +1,218 @@
+/**
+ * Form elements
+ */
+.btn,
+.form-item input.form-text,
+.form-item select,
+.form-item textarea {
+  font-family: 'Ubuntu', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 400;
+  line-height: 130%;
+}
+.btn {
+  background: #8cc63f;
+  border: 0;
+  -moz-border-radius: 4px;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  display: block;
+  height: 27px;
+  line-height: 27px;
+  margin: 0;
+  padding: 0 .75em;
+  text-align: center;
+  text-decoration: none;
+  text-transform: lowercase;
+}
+.btn:hover {
+  color: #fff;
+  opacity: .80;
+}
+input.btn {
+  float: left;
+  height: auto;
+  margin: 0 0 1em 0;
+  padding: 3px .5em 4px .5em;
+}
+.btn .corners {
+  -moz-border-radius: 4px;
+  -webkit-border-radius: 4px;
+  border-radius: 4px;
+}
+
+.form-item,
+.text-format-wrapper .form-item,
+.form-actions {
+  margin: 0 0 1em 0;
+}
+
+.form-item input.form-text,
+.form-item select,
+.form-item textarea {
+  border: solid 1px rgba(0, 0, 0, .10);
+  border-collapse: collapse;
+  height: 27px;
+  padding: 4px 4px 3px 4px;
+}
+.form-item input.form-text:hover,
+.form-item textarea:hover,
+.form-item select:hover {
+  border: solid 1px rgba(0, 0, 0, .20);
+}
+.form-item input.form-text {
+  height: 18px;
+  line-height: 18px;
+}
+.form-item select {
+  height: 27px;
+  line-height: 27px;
+  width: 100%;
+}
+.form-item textarea {
+  width: 100%;
+}
+.form-item .description {
+  font-size: 1em;
+  margin: 1em 0;
+}
+.resizable-textarea .grippie {
+  width: 100%;
+}
+
+#autocomplete {
+  background: #fff;
+}
+
+.form-actions {
+  clear: left;
+}
+
+
+html.js input.form-autocomplete {
+  background-position: 99% 6px;
+}
+html.js input.throbbing {
+  background-position: 99% -14px;
+}
+.field-widget-entityreference-autocomplete-tags .form-item,
+.field-widget-taxonomy-autocomplete .form-item {
+  position: relative;
+}
+
+div.confirm-parent,
+div.password-parent,
+div.password-strength,
+div.password-confirm {
+  clear: none;
+  float: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+div.password-indicator {
+  margin: .5em 0;
+  padding: 0 2px;
+}
+div.form-item div.password-suggestions {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  width: auto;
+}
+div.password-suggestions ul {
+  list-style: square outside none;
+  margin: 0 0 0 2em;
+}
+
+/**
+ * AJAX spinner
+ */
+.ajax-progress-throbber {
+  display: none;
+}
+
+/**
+ * Inline form elements (system)
+ */
+.container-inline {
+  float: left;
+  margin: 0;
+  text-align: left;
+  width: auto;
+}
+.container-inline .form-item,
+.container-inline .form-actions {
+  display: block;
+  float: left;
+  margin: 0 6px 0 0;
+  overflow: hidden;
+}
+.container-inline .form-type-select select,
+.container-inline input.form-text {
+  color: #aaa;
+}
+.container-inline div.item-list {
+  display: block;
+  margin: 1em 0 0 0;
+}
+.section-content .container-inline div.item-list {
+  margin: .5em 0 0 0;
+}
+.container-inline .item-list ul li {
+  float: left;
+  list-style: none outside none;
+  margin: 0 1em 0 0;
+}
+
+
+/**
+ * Header - Search Form
+ */
+#section-header .block-search .container-inline {
+  float: right;
+}
+#section-header .block-search .form-item,
+#section-header .block-search .form-actions {
+  border: 0;
+  margin: 0 0 0 5px;
+  padding: 0;
+}
+#section-header .block-search .form-item input.form-text,
+#section-header .block-search .form-item select {
+  border: solid 1px rgba(0, 0, 0, .10);
+}
+#section-header .block-search .form-item input.form-text {
+  height: 18px;
+  line-height: 18px;
+}
+
+#section-header .block-search .form-actions {
+  clear: none;
+  height: 27px;
+  overflow: hidden;
+}
+#section-header .block-search .advanced-wrapper {
+  clear: both;
+  float: right;
+  margin: .5em 0 1em 0;
+  text-transform: lowercase;
+}
+/**
+ * Top-level type search
+ */
+.block-embed-type-search h2.block-title {
+  margin: 0 0 .5em 0;
+}
+
+/**
+ * User Recent Activity filter form
+ */
+.box .hd .block.user-recent-activity-filter {
+  margin-top: 0;
+}
+.box .hd .block.user-recent-activity-filter select {
+  border: 0;
+}

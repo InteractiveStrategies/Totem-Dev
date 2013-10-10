@@ -1,0 +1,58 @@
+<?php
+/**
+ * @file
+ * totem_media.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function totem_media_install() {
+
+  // Set variables.
+  // Used by hook_node_access to trigger CRUD access checks.
+  variable_set('node_permissions_media', 1);
+  variable_set('node_options_media', array('status'));
+  variable_set('node_submitted_media', TRUE);
+  variable_set('comment_subject_field_media', FALSE);
+  variable_set('comment_default_mode_media', COMMENT_MODE_THREADED);
+  variable_set('comment_default_per_page_media', '300');
+  variable_set('internal_nodes_action_media', '404');
+  variable_set('internal_nodes_nodes_media', 0);
+  variable_set('internal_nodes_url_media', '');
+
+  // Used by hook_node_access to trigger CRUD access checks.
+  variable_set('node_permissions_media_collection', 1);
+  variable_set('node_options_media_collection', array('status'));
+  variable_set('node_submitted_media_collection', TRUE);
+  variable_set('comment_media_collection', COMMENT_NODE_HIDDEN);
+  variable_set('comment_default_mode_media_collection', COMMENT_MODE_THREADED);
+  variable_set('comment_default_per_page_media_collection', '50');
+  variable_set('internal_nodes_action_media_collection', '404');
+  variable_set('internal_nodes_nodes_media_collection', 0);
+  variable_set('internal_nodes_url_media_collection', '');
+
+  // Custom variable to indicate that:
+  // - media items should view in lightbox/modal
+  // - Media tab displays separate listings of collections and loose media nodes
+  // - Collection detail displays a grid of teasers of child nodes
+  variable_set('totem_media_gallery_mode', TRUE);
+
+  // Set a default, unmanaged image for video and audio media nodes
+  // (for thumbnails).
+  /*
+  $media_default_image_src_path = drupal_get_path('module', 'totem_media') . '/theme/img/media_default_video.jpg';
+  $media_default_image_dest_path = _totem_common_put_default_image($media_default_image_src_path, 'totem_media/media_default_video.jpg', FALSE);
+  if ($media_default_image_dest_path !== FALSE) {
+    variable_set('totem_media_default_image', $media_default_image_dest_path);
+  }
+  */
+
+  // Custom variable to hide File/Media Collections capabilities (without really
+  // disabling the functionality).
+  variable_set('totem_media_hide_collections', FALSE);
+
+  // Give this module heaviest weight.
+  _totem_common_system_max_weight('totem_media');
+
+}

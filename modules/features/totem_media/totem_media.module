@@ -1,0 +1,776 @@
+<?php
+/**
+ * @file
+ * totem_media.module
+ */
+
+require_once 'totem_media.features.inc';
+require_once 'includes/totem_media.theme.inc';
+require_once 'includes/totem_media.block.inc';
+require_once 'includes/totem_media.form.inc';
+require_once 'includes/totem_media.pages.inc';
+
+/**
+ * Get current media_collection node context from current path,
+ * like _totem_common_get_community_context_node().
+ */
+function _totem_media_get_collection_context_node() {
+
+  $args = arg();
+
+  foreach ($args as $arg) {
+    if (is_numeric($arg)) {
+      $node = node_load($arg);
+      if (!empty($node) && $node->type == 'media_collection') {
+        return $node;
+      }
+    }
+  }
+
+  return FALSE;
+}
+/**
+ * Query the YouTube Data API for a given video ID.
+ *
+ * @param string $yt_video_url
+ *   The full URL of the video on youtube.com.
+ *
+ * @return object
+ *   All data returned by the API query, as a JSON string run through
+ *   json_decode().
+ */
+function _totem_media_get_youtube_video_data($yt_video_url) {
+  // TODO: validate URL...?
+  // TODO: check for API limit?
+  $url_parts = drupal_parse_url(trim($yt_video_url));
+  if (!empty($url_parts['query']['v'])) {
+    // We use cURL because drupal_http_request() looks like overkill.
+    $yt_api_url = "http://gdata.youtube.com/feeds/api/videos/" . $url_parts['query']['v'] . "?alt=json";
+    $ch = curl_init($yt_api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+    $yt_json = json_decode(curl_exec($ch));
+    curl_close($ch);
+
+    return $yt_json;
+  }
+
+  return NULL;
+}
+/**
+ * Get dimensions for one/all of the media image styles for theming convenience.
+ */
+function _totem_media_get_media_image_style_dimensions($style_name = NULL) {
+  $media_style_names = array('media_large', 'media_thumb');
+
+  if (empty($style_name) || in_array($style_name, $media_style_names)) {
+    $dimensions = &drupal_static(__FUNCTION__);
+
+    if (!isset($dimensions)) {
+      $dimensions = array();
+
+      foreach ($media_style_names as $media_style_name) {
+        // Note there's also caching in image_styles().
+        $style = image_style_load($media_style_name);
+        foreach ($style['effects'] as $effect) {
+          if ($effect['name'] == 'image_scale_and_crop') {
+            $dimensions[$media_style_name]['width'] = $effect['data']['width'];
+            $dimensions[$media_style_name]['height'] = $effect['data']['height'];
+            break;
+          }
+        }
+      }
+    }
+
+    return empty($style_name) ? $dimensions : $dimensions[$style_name];
+  }
+
+  return NULL;
+}
+
+// Hook implementations.
+/**
+ * Implements hook_element_info_alter().
+ *
+ * Silly workaround to make #states fully work with Plupload element, part 1.
+ *
+ * @see https://drupal.org/node/2104389
+ */
+function totem_media_element_info_alter(&$type) {
+  if (isset($type['plupload'])) {
+    $type['plupload']['#post_render'][] = '_totem_media_plupload_elem_post_render';
+  }
+}
+/**
+ * Custom #post_render function for plupload element.
+ *
+ * Silly workaround to make #states fully work with Plupload element, part 2.
+ *
+ * @https://drupal.org/node/2104389
+ */
+function _totem_media_plupload_elem_post_render($output, $elements) {
+  // This is so awful...
+  // We just wanna get rid of this class on div.plupload-element... luckily
+  // it's the only place it's used so we can just strip it out.
+  return str_replace('form-wrapper', '', $output);
+}
+/**
+ * Implementation of hook_library_alter().
+ */
+function totem_media_library_alter(&$libraries, $module) {
+
+  $libraries['plupload']['version'] = '1.5.4';
+
+  if (!empty($libraries['plupload']['js'][0]['data']['plupload']['_default'])) {
+    $libraries['plupload']['js'][0]['data']['plupload']['_default'] = array_merge(
+      $libraries['plupload']['js'][0]['data']['plupload']['_default'], array(
+        'runtimes' => 'html5,flash,silverlight,html4',
+        'multipart' => TRUE,
+      )
+    );
+  }
+}
+/**
+ * Implements hook_menu().
+ */
+function totem_media_menu() {
+
+  // Callback for plupload modal.
+  $items['community/add/files/%node'] = array(
+    'title' => 'Files',
+    'file' => 'includes/totem_media.form.inc',
+    'page callback' => 'totem_media_form_node',
+    'page arguments' => array(1, 2, 3, NULL),
+    'access callback' => 'node_access',
+    'access arguments' => array('create', 'media'),
+    'type' => MENU_CALLBACK,
+  );
+
+  // Full page which contains node form to edit a media_collection node.
+  // This is added as a contextual link as well, to replace modal edit link for this content type only,
+  // via totem_media_contextual_links_view_alter().
+  $items['node/%node/edit-media-collection/%node'] = array(
+    'title' => 'Edit',
+    'file' => 'includes/totem_media.form.inc',
+    'page callback' => 'totem_media_form_node',
+    'page arguments' => array('edit', 'collection', 1, 3),
+    // Wrapper for $node->type == 'community' + node_access check if TRUE
+    'access callback' => '_totem_common_menu_access_callback_op_community',
+    'access arguments' => array(1, 'view'),
+    'type' => MENU_LOCAL_TASK,
+    'tab_parent' => 'node/%/media',
+  );
+
+  // Custom path to invoke viewing a media item in lightbox.
+  if (variable_get('totem_media_gallery_mode') == TRUE) {
+    /**
+     * Local tasks.
+     * @see totem_common_menu()
+     */
+    $items['node/%node/media-view/%node'] = array(
+      'title' => 'Media View',
+      'file' => 'includes/totem_media.pages.inc',
+      'page callback' => 'totem_media_page_lightbox_view',
+      'page arguments' => array(1, 3),
+      // Wrapper for $node->type == 'community' + node_access check if TRUE
+      'access callback' => '_totem_common_menu_access_callback_op_community',
+      'access arguments' => array(1, 'view'),
+      'type' => MENU_CALLBACK,
+      'delivery callback' => 'ajax_deliver'
+    );
+  }
+
+  // Custom modal form to remove a media node from its collection.
+  // See: totem_common_menu()
+  // This is added as a contextual link, but for media nodes that are in a media_collection,
+  // so we do not specify the it as such here (i.e. no 'context' => MENU_CONTEXT_INLINE)
+  $title = t('Remove from @collection', array('@collection' => t('collection')));
+  $description = t('Remove this @media from the @collection but keep it in the @community.', array(
+    '@media' => t('media item'),
+    '@collection' => t('collection'),
+    '@community' => t('community'),
+  ));
+  $items['node/%node/modal/remove-from-collection/%node'] = array(
+    'title' => $title,
+    'description' => $description,
+    'file' => 'includes/totem_media.form.inc',
+    'page callback' => 'totem_media_form_node',
+    'page arguments' => array(3, 'media_item', 4, 1), // totem_media_form_node($op, $type, $node_parent, $node)
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 1),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_url_outbound_alter().
+ */
+function totem_media_url_outbound_alter(&$path, &$options, $original_path) {
+
+  if (!empty($options['entity_type']) && $options['entity_type'] == 'node') {
+    $absolute = (isset($options['absolute']) && $options['absolute'] == TRUE);
+
+    // For media nodes opening in modal, force the "absolute" version if
+    // we're not in the desired context to open the modal; i.e.
+    // within the Media tab or a media-view modal.
+    if (variable_get('totem_media_gallery_mode')
+            && $options['entity']->type == 'media'
+            && arg(2) != 'media' && arg(2) != 'media-view') {
+      $absolute = TRUE;
+    }
+
+    if ($absolute) {
+      switch ($options['entity']->type) {
+        case 'media_collection':
+          _totem_common_url_outbound_alter($path, $options, $original_path, $options['entity']->type, 'media');
+          break;
+
+        case 'media':
+          _totem_common_url_outbound_alter($path, $options, $original_path, $options['entity']->type, 'media');
+
+          $path = rtrim($path, "/{$options['entity']->nid}");
+
+          // Append the latest media_collection nid if it exists.
+          $efq_params = array(
+            'return' => 'entity_id',
+            'bundle' => 'media_collection',
+            'field_conditions' => array(
+              array('field' => 'field_media', 'column' => 'target_id', 'value' => $options['entity']->nid),
+              array('field' => 'field_community', 'column' => 'target_id', 'value' => $options['entity_context_community']->nid),
+            ),
+            'property_order_by' => array(
+              array('column' => 'changed', 'direction' => 'DESC'),
+            ),
+            'page_limit' => 1,
+          );
+
+          $nid_collection = array_pop(_totem_common_efq($efq_params)->results);
+
+          if (!empty($nid_collection)) {
+            $path .= "/{$nid_collection}";
+          }
+
+          if (variable_get('totem_media_gallery_mode')) {
+//            // Add query param so JS knows which node to open on page load.
+//            $options['query']['view'] = $options['entity']->nid;
+            // Append args so JS knows which node to open on page load.
+            // @see totem_media.js, bindMediaAutoView()
+            $path .= '/view/' . $options['entity']->nid;
+          }
+
+          $options['alias'] = $path;
+
+          break;
+      }
+    }
+    else {
+      switch ($options['entity']->type) {
+        case 'media_collection':
+          // Route requests through the /media callback.
+          _totem_common_url_outbound_alter($path, $options, $original_path, $options['entity']->type, 'media');
+
+          // Reset default AJAX request path if gallery mode.
+          if (variable_get('totem_media_gallery_mode')) {
+            $path = str_replace('/nojs', '', $path);
+            $options['alias'] = $path;
+          }
+
+          break;
+
+        case 'media':
+          // Toggle /media or /media-view path depending on gallery setting.
+          _totem_common_url_outbound_alter($path, $options, $original_path, $options['entity']->type, (variable_get('totem_media_gallery_mode') ? 'media-view' : 'media'));
+
+          // Reset default AJAX request path if gallery mode.
+          if (variable_get('totem_media_gallery_mode')) {
+            $path = str_replace('/nojs', '', $path);
+            $options['alias'] = $path;
+
+            // Add grouping query param to support modal previous/next links.
+            if (!isset($options['query']['grouping'])) {
+              $nid_collection = arg(3);
+              // The 3rd arg may be 'view', so make sure it's numeric.
+              if (!empty($nid_collection) && is_numeric($nid_collection)) {
+                $options['query']['grouping'] = $nid_collection;
+              }
+              else {
+                $options['query']['grouping'] = 'loose';
+              }
+            }
+          }
+          break;
+      }
+    }
+  }
+
+}
+/**
+ * Implements hook_theme().
+ */
+function totem_media_theme() {
+  $items = array(
+    'totem_media_youtube_embed' => array(
+      'template' => 'theme/totem-media-youtube-embed',
+      'file' => 'includes/totem_media.theme.inc',
+      'variables' => array(
+        'yt_url' => '',
+      ),
+    ),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_theme_registry_alter().
+ */
+function totem_media_theme_registry_alter(&$theme_registry) {
+  $path = drupal_get_path('module', 'totem_media');
+  _totem_common_theme_registry_alter($theme_registry, $path);
+}
+/**
+ * Implements hook_contextual_links_view_alter().
+ */
+function totem_media_contextual_links_view_alter(&$element, $items) {
+  // media_collection nodes use an actual page for node-edit.
+  // Note: considered setting this menu path have context => MENU_CONTEXT_INLINE
+  // but that doesn't make sense for two reasons:
+  // 1) It only applies to this content type, but would get attached to all nodes and we'd have to delete it for others.
+  // 2) menu_contextual_links() expects these to be local tasks of e.g. node/%node/%task,
+  // but our path is different, as it starts with node/%node for the community node.
+
+  if (isset($element['#element']['#entity_type']) && $element['#element']['#entity_type'] == 'node') {
+    $node = $element['#element']['#node'];
+
+    if (isset($element['#element']['#bundle'])) {
+
+      if ($element['#element']['#bundle'] == 'media_collection') {
+
+        if (isset($element['#links']['node-modal-edit'])) {
+          // Our custom path requires the community node
+          // This is similar to how totem_discuss_contextual_links_view_alter() builds links for comments.
+          $node_community = _totem_common_get_community_context_node();
+
+          // Guessing we won't have a community node if we're on the user's home page?
+          if (!empty($node_community)) {
+            // To preserve ordering...
+            $links_keys = array_keys($element['#links']);
+            $edit_index = array_search('node-modal-edit', $links_keys);
+            $links_vals = array_values($element['#links']);
+
+            $edit_copy = $element['#links']['node-modal-edit'];
+            // Use the path we want. Query with 'destination' should be set to current path,
+            // i.e. we're sent back to where we came from - which is what we want.
+            $edit_copy['href'] = 'node/' . $node_community->nid . '/edit-media-collection/' . $node->nid;
+
+            // menu_contextual_links() builds the array keyed by a class
+            // consisting of implementing module + the task,
+            // so mimic that with our new key
+            $links_keys[$edit_index] = 'node-edit-media-collection';
+            $links_vals[$edit_index] = $edit_copy;
+
+            $element['#links'] = array_combine($links_keys, $links_vals);
+          }
+          else {
+            // Remove the modal edit path regardless... we don't want to use it even as a fallback.
+            unset($element['#links']['node-modal-edit']);
+          }
+        }
+      }
+      elseif ($element['#element']['#bundle'] == 'media') {
+
+        // If applicable, add the path to remove this media node from its collection.
+        $collection_node = _totem_media_get_collection_context_node();
+        if (!empty($collection_node)) {
+          $nids_in_collection = _totem_common_get_field_entityreference_values('node', $collection_node, 'field_media');
+          if (in_array($node->nid, $nids_in_collection)) {
+            $path = 'node/' . $node->nid . '/modal/remove-from-collection/' . $collection_node->nid;
+            $menu_item = menu_get_item($path);
+
+            if ($menu_item['access']) {
+              $element['#links']['media-remove-coll'] = array(
+                'title' => $menu_item['title'] . ' <span></span>',
+                'href' => $path,
+                'html' => TRUE
+              );
+              // We have to add this here since we're running after totem_common_contextual_links_view_alter()
+              if (!empty($menu_item['description'])) {
+                $element['#links']['media-remove-coll']['attributes']['title'] = $menu_item['description'];
+              }
+            }
+          }
+        }
+      }
+
+      if (in_array($element['#element']['#bundle'], array('media', 'media_collection'))) {
+        // Remove auto-view from contextual links' destination. Otherwise, after
+        // editing a node for example, user will be redirected back to the Media
+        // tab and pop open a modal, likely not the one they were editing.
+        foreach ($element['#links'] as &$link) {
+          if (!empty($link['query']) && !empty($link['query']['destination'])) {
+            // Look for destination e.g. "node/10/media/view/100".
+            $dest = &$link['query']['destination'];
+            if (preg_match('/node\/[0-9]+\/media(\/[0-9]+)?\/view\/([0-9]+)/', $dest, $matches)) {
+              // Unless it's an edit link for this node in full view, remove the
+              // auto-view from the destination.
+              $dest_nid_view = $matches[2];
+              $edit_path = 'nodes/' . $dest_nid_view . '/modal/edit';
+              if (!(strpos($link['href'], $edit_path) !== FALSE && $element['#element']['#view_mode'] == 'full')) {
+                $dest = str_replace('/view/' . $dest_nid_view, '', $dest);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+/**
+ * Implements hook_query_TAG_alter().
+ */
+function totem_media_query_NOT_IN_COLLECTION_alter(QueryAlterableInterface $query) {
+  // Join to any records where the media node is being referenced in media_collection's field_media
+  $query->leftJoin('field_data_field_media', 'fm', 'node.nid = fm.field_media_target_id');
+
+  // TODO ?
+  // These do not work in the raw SQL query... I suspect because they can't cooperate with fm.entity_id IS NULL.
+  // We would only need these conditions if we end up with any other entities/bundles sharing this field.
+  // $query->condition('fm.entity_type', 'node');
+  // $query->condition('fm.bundle', 'media_collection');
+
+  // ... and make sure no entities (i.e. media_collection nodes) are referencing it
+  $query->isNull('fm.entity_id');
+
+}
+/**
+ * Implements hook_node_view().
+ */
+function totem_media_node_view($node, $view_mode, $langcode) {
+  if ($node->type == 'media') {
+
+    // If we want to render field_media_url...
+    if (!empty($node->content['field_media_url'])) {
+
+      // Grab a thumbnail via the YT API.
+      // TODO: implement session-based caching?
+      $yt_url = trim($node->field_media_url[LANGUAGE_NONE][0]['value']);
+      $yt_data = _totem_media_get_youtube_video_data($yt_url);
+
+      // First thumb is 480x360; the subsequent 3 are all 120x90.
+      // I don't think we can actually run these through image styles, because
+      // that would store derivative versions on our file system.
+      $thumbnail_data = $yt_data->entry->{'media$group'}->{'media$thumbnail'}[0];
+
+      // Set up the sized images HTML.
+      // We can't cache stuff pulled from the YT, so we can't run these through
+      // theme_image_style(). Instead we build a wrapper.
+      $sized_images = array();
+      $media_styles_dims = _totem_media_get_media_image_style_dimensions();
+      foreach ($media_styles_dims as $style_name => $style_dims) {
+        $wrapper_class = drupal_html_class('wrapper-' . $style_name);
+        $w = $style_dims['width'];
+        $h = $style_dims['height'];
+        $image_class = drupal_html_class($style_name);
+
+        // CSS sets width to be 100% of container using image style dimensions.
+        // Calculate a negative margin-top to vertically center image.
+        // TODO: don't know if this makes sense for media-large style...but
+        // then I don't think that is even displayed anywhere.
+        $ratio = $w / $thumbnail_data->width;
+        $margin_top = ($h - ($ratio * $thumbnail_data->height)) / 2;
+
+        $sized_images[$style_name] = '<div class="' . $wrapper_class . '" style="width: ' . $w . 'px; height: ' . $h . 'px;">';
+        $sized_images[$style_name] .= '<img class="' . $image_class . '" src="' . $thumbnail_data->url . '" alt="" style="margin-top: ' . $margin_top . 'px;" />';
+        $sized_images[$style_name] .= '</div>';
+      }
+
+      // Create only the pieces of the file field's render array that we
+      // reference in other places.
+      $node->content['field_file'] = array(
+        '#items' => array(
+          array(
+            'type' => 'video',
+          ),
+        ),
+        array(
+          '#file' => (object) array(
+            // Checked in full node view.
+            // @see node--media.tpl.php
+            'type' => 'video',
+            // For generating the file icon. Luckily the second half doesn't
+            // actually matter...
+            // @see totem_media_preprocess_node(), file_icon_path()
+            'filemime' => 'video/whatever',
+          ),
+          'sized_images' => $sized_images,
+          // What we actually want to render. When using the 'file_rendered'
+          // formatter, the File module keys this array with 'file' too. We use
+          // the same key for convenience, but our own theme function.
+          'file' => array(
+            '#theme' => 'totem_media_youtube_embed',
+            '#yt_url' => $yt_url,
+          ),
+        ),
+      );
+
+      // We don't actually render it. :)
+      unset($node->content['field_media_url']);
+    }
+
+    if (!empty($node->content['field_file'])) {
+      // For media nodes whose file is not an image, attach default image.
+      // This is only needed for rendering in teaser view mode,
+      // but is also accessed in full view mode for sake of Facebook OpenGraph.
+      // @see totem_common_node_view_alter(), totem_media_node_view_alter()
+      $field_file = $node->content['field_file'];
+      // (Hardcode index since this field only holds one file.)
+      switch ($field_file['#items'][0]['type']) {
+        case 'video':
+        case 'audio':
+          $media_default_uri = variable_get('totem_media_default_image', '');
+          break;
+      }
+
+      if (empty($field_file[0]['sized_images']) && !empty($media_default_uri)) {
+        $type_name = drupal_ucfirst($field_file['#items'][0]['type']);
+        $images = _totem_common_image_styles($media_default_uri, array(
+          'alt' => $type_name,
+        ));
+
+        // Attach output to the field's render array. Use the same 'sized_images'
+        // key as totem_common_node_view() uses for image fields, so that
+        // a thumbnail of the default image can be pulled in to media teasers
+        // with no additional checks.
+        // @see node--media.tpl.php
+        $node->content['field_file'][0]['sized_images'] = $images;
+      }
+    }
+
+  }
+  // For media_collection nodes, provide the first child node, so its image
+  // can be used in media_collection's teaser.
+  // @see node--media-collection.tpl.php
+  elseif ($node->type == 'media_collection' && $view_mode == 'teaser') {
+    if (!empty($node->field_media)) {
+      $first_nid = $node->field_media[$node->language][0]['target_id'];
+      $node->content['first_child_node'] = node_view(node_load($first_nid), 'teaser');
+    }
+  }
+}
+/**
+ * Implements hook_node_view_alter().
+ */
+function totem_media_node_view_alter(&$build) {
+  // Overwrite the og:image meta tag for Facebook OpenGraph.
+  // @see totem_common_node_view_alter()
+  $node = &$build['#node'];
+
+  $node = node_load($node->nid);
+  if ($node->type == 'media' || $node->type == 'media_collection') {
+
+    if ($build['#view_mode'] !== 'full') {
+      return;
+    }
+
+    if ($node->type == 'media') {
+      // Pull image data from render array, not $node, because this accounts
+      // for default-image cases too.
+      // @see totem_media_node_view()
+      $field_file = $build['field_file'][0];
+    }
+    elseif ($node->type == 'media_collection' && !empty($node->field_media)) {
+      // TODO: This breaks if the patch here in entityreference isn't in: http://drupal.org/node/1412572
+      $first_child_nid = $node->field_media[$node->language][0]['target_id'];
+      // When not logged in, field_media isn't rendered in media_collecion full view.
+      // I suspect this might be because the anonymous user cannot access the
+      // referenced media nodes.
+      if (!empty($build['field_media'])) {
+        $first_child_teaser = $build['field_media'][0]['node'][$first_child_nid];
+      }
+      else {
+        $first_child_teaser = node_view(node_load($first_child_nid), 'teaser');
+      }
+      $field_file = $first_child_teaser['field_file'][0];
+    }
+
+    // Do some stuff to support OpenGraph sharing (facebook).
+    $facebook_oauth_id = variable_get('fboauth_id');
+    if (!empty($facebook_oauth_id)) {
+      // Exclude non-image media.
+      if (isset($field_file) && isset($field_file['sized_images'])) {
+        // Note: Facebook requests that both dimension of og:image are at least
+        // 200px, so use media_large preset rather than media_thumb.
+        $img_tag = $field_file['sized_images']['media_large'];
+
+        $pattern = '/src="(?P<image_url>[^"]+)"/';
+        preg_match($pattern, $img_tag, $matches);
+
+        $node->og_meta['og:image'] = array(
+          '#type' => 'html_tag',
+          '#tag' => 'meta',
+          '#attributes' => array(
+            'property' => 'og:image',
+            'content' => $matches['image_url'],
+          ),
+        );
+
+        drupal_add_html_head($node->og_meta['og:image'], 'og:image');
+      }
+    }
+
+  }
+}
+
+// Hook implementations (Features).
+/**
+ * Implements hook_node_community_ENTITY_TYPE().
+ */
+function totem_media_node_community_media($vars) {
+
+  $efq_params = array(
+    'entity_type' => 'node',
+    'bundle' => 'media',
+    'field_conditions' => array(
+      array('field' => 'field_community', 'column' => 'target_id', 'value' => $vars['node']->nid),
+    ),
+    'page_limit' => (!empty($vars['page_limit']) ? $vars['page_limit'] : NULL),
+    'property_order_by' => array(
+      array('column' => 'changed', 'direction' => 'DESC'),
+    ),
+    'tags' => array('NOT_IN_COLLECTION'),
+  );
+
+  if (variable_get('totem_media_gallery_mode')) {
+    $efq_params['page_limit'] = PAGE_SIZE_LISTS_PAGE;
+  }
+
+  // Note: on community overview, the NOT_IN_COLLECTION tag will be removed,
+  // since media collections aren't shown, and we want to include media nodes
+  // that live in a collection.
+  // @see _totem_media_block_view_overview_community()
+  $efq_params = array_merge($efq_params, $vars);
+
+  $items['nodes'] = array(
+    'query' => _totem_common_efq($efq_params),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_node_community_ENTITY_TYPE_entity().
+ */
+function totem_media_node_community_media_entity($vars) {
+
+  // Check for media_collection request; requests for both media and
+  // media_collection are routed through this hook per:
+  // @see totem_media_url_outbound_alter()
+  $items_collection = module_invoke('totem_media', 'node_community_media_collection_entity', $vars);
+  if (!empty($items_collection['nodes']['query']->results)) {
+    return $items_collection;
+  }
+
+  // Return single media node.
+  $efq_params = array(
+    'view_mode' => 'full',
+    'property_conditions' => array(
+      array('column' => 'nid', 'value' => $vars['entity_id']),
+    ),
+    // Override addition of NOT_IN_COLLECTION tag, since we're requesting
+    // a specific node and not a listing.
+    'tags' => array()
+  );
+
+  $efq_params = array_merge($efq_params, $vars);
+
+  return module_invoke('totem_media', 'node_community_media', $efq_params);
+}
+/**
+ * Implements hook_node_community_ENTITY_TYPE().
+ */
+function totem_media_node_community_media_collection($vars) {
+
+  $efq_params = array(
+    'entity_type' => 'node',
+    'bundle' => 'media_collection',
+    'field_conditions' => array(
+      array('field' => 'field_community', 'column' => 'target_id', 'value' => $vars['node']->nid),
+    ),
+    'page_limit' => (!empty($vars['page_limit']) ? $vars['page_limit'] : NULL),
+    'property_order_by' => array(
+      array('column' => 'changed', 'direction' => 'DESC'),
+    ),
+  );
+
+  if (variable_get('totem_media_gallery_mode')) {
+    $efq_params['page_limit'] = PAGE_SIZE_LISTS_PAGE;
+  }
+
+  $efq_params = array_merge($efq_params, $vars);
+
+  $items['nodes'] = array(
+    'query' => _totem_common_efq($efq_params),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_node_community_ENTITY_TYPE_entity().
+ */
+function totem_media_node_community_media_collection_entity($vars) {
+
+  $efq_params = array(
+    'view_mode' => 'full',
+    'property_conditions' => array(
+      array('column' => 'nid', 'value' => $vars['entity_id']),
+    ),
+  );
+
+  $efq_params = array_merge($efq_params, $vars);
+
+  return module_invoke('totem_media', 'node_community_media_collection', $efq_params);
+}
+/**
+ * Implements hook_user_community_ENTITY_TYPE().
+ */
+function totem_media_user_community_media($vars) {
+
+  // Get user's list of active Community nids
+  $nid_community = _totem_common_get_field_entityreference_values('user', $vars['account'], 'field_community');
+  if (empty($nid_community)) {
+    return NULL;
+  }
+
+  $efq_params = array(
+    'entity_type' => 'node',
+    'bundle' => array('media', 'media_collection'),
+    'property_conditions' => array(
+      array('column' => 'uid', 'value' => $vars['account']->uid),
+    ),
+    'field_conditions' => array(
+      array('field' => 'field_community', 'column' => 'target_id', 'value' => $nid_community),
+    ),
+    'page_limit' => (!empty($vars['page_limit']) ? $vars['page_limit'] : PAGE_SIZE_LISTS_PAGE),
+    'property_order_by' => array(
+      array('column' => 'changed', 'direction' => 'DESC')
+    ),
+  );
+
+  $items['nodes'] = array(
+    'query' => _totem_common_efq($efq_params),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_totem_common_EFQ_params_alter().
+ */
+function totem_media_totem_common_EFQ_params_alter(&$vars, $type, $entity_type) {
+
+  if ($type == '_totem_common_block_view_list_type') {
+    if ($entity_type == 'media') {
+      if (variable_get('totem_media_gallery_mode') == TRUE) {
+        $vars['page_limit'] = PAGE_SIZE_LISTS_PAGE;
+      }
+    }
+  }
+
+}

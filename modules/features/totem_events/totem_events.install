@@ -1,0 +1,40 @@
+<?php
+/**
+ * @file
+ * totem_events.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function totem_events_install() {
+
+  // Set variables.
+  _totem_events_install_variables();
+
+  // Give this module heaviest weight.
+  _totem_common_system_max_weight('totem_events');
+
+}
+
+// Installation tasks.
+/**
+ * TODO.
+ */
+function _totem_events_install_variables() {
+
+  // Set variables.
+  // Used by hook_node_access to trigger CRUD access checks.
+  variable_set('node_permissions_event', 1);
+  variable_set('node_options_event', array('status'));
+  variable_set('node_submitted_event', TRUE);
+  variable_set('comment_event', COMMENT_NODE_HIDDEN);
+  variable_set('comment_default_mode_event', COMMENT_MODE_FLAT);
+  variable_set('comment_default_per_page_event', '300');
+  variable_set('internal_nodes_action_event', '404');
+  variable_set('internal_nodes_nodes_event', 0);
+  variable_set('internal_nodes_url_event', '');
+
+  variable_set('date_popup_timepicker', 'default');
+
+}

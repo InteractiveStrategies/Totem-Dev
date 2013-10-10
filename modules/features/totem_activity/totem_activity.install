@@ -1,0 +1,25 @@
+<?php
+/**
+ * @file
+ * totem_activity.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function totem_activity_install() {
+
+  _totem_activity_install_variables();
+
+  // Give this module heaviest weight.
+  _totem_common_system_max_weight('totem_activity');
+
+}
+
+// Installation tasks.
+/**
+ * Install variables pertinent to this module.
+ */
+function _totem_activity_install_variables() {
+
+}

@@ -1,0 +1,12 @@
+#zone-header,
+#zone-preface,
+#zone-content,
+#zone-footer {
+  margin: 0 auto;
+  width: 980px;
+}
+
+#zone-content,
+#zone-footer {
+  overflow: hidden;
+}
