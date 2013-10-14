@@ -11,9 +11,3 @@ features[features_api][] = api:1
 features[user_permission][] = search content
 features[user_permission][] = use advanced search
 
-; Information added by drupal.org packaging script on 2013-07-10
-version = "7.x-1.0-beta5"
-core = "7.x"
-project = "totem"
-datestamp = "1373421051"
-

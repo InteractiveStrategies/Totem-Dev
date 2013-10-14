@@ -58,3 +58,4 @@ features[user_permission][] = create community content
 features[user_permission][] = delete own community content
 features[user_permission][] = edit own community content
 features[user_permission][] = view own unpublished content
+

@@ -48,3 +48,4 @@ features[user_permission][] = edit any media_collection content
 features[user_permission][] = edit own media content
 features[user_permission][] = edit own media_collection content
 features[user_permission][] = view media
+

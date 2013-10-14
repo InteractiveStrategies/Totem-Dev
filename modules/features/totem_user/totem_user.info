@@ -39,9 +39,3 @@ features[user_permission][] = edit any community content
 features[user_permission][] = edit any page content
 features[user_role][] = moderator
 
-; Information added by drupal.org packaging script on 2013-07-10
-version = "7.x-1.0-beta5"
-core = "7.x"
-project = "totem"
-datestamp = "1373421051"
-

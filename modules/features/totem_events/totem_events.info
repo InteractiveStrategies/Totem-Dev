@@ -28,3 +28,4 @@ features[user_permission][] = create event content
 features[user_permission][] = delete own event content
 features[user_permission][] = edit any event content
 features[user_permission][] = edit own event content
+

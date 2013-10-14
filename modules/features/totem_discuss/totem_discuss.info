@@ -37,3 +37,4 @@ features[user_permission][] = read privatemsg
 features[user_permission][] = reply only privatemsg
 features[user_permission][] = skip comment approval
 features[user_permission][] = write privatemsg
+

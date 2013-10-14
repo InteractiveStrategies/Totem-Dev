@@ -9,9 +9,7 @@ dependencies[] = totem_common
 dependencies[] = totem_user
 dependencies[] = votingapi
 configure = admin/totem
-datestamp = 1373421051
 features[features_api][] = api:1
 features[field][] = node-community-field_rating
 features[user_permission][] = rate content
-
 

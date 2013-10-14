@@ -11,9 +11,3 @@ dependencies[] = totem_events
 dependencies[] = totem_search
 dependencies[] = totem_activity
 
-; Information added by drupal.org packaging script on 2013-09-22
-version = "7.x-1.1"
-core = "7.x"
-project = "totem"
-datestamp = "1379874574"
-

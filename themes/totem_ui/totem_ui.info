@@ -279,3 +279,4 @@ settings[alpha_region_footer_second_columns] = '6'
 settings[alpha_region_footer_second_suffix] = ''
 settings[alpha_region_footer_second_weight] = '1'
 settings[alpha_region_footer_second_css] = 'pull-6'
+
