@@ -65,7 +65,7 @@ projects[link][subdir] = "contrib"
 projects[link][version] = "1.1"
 
 projects[location][subdir] = "contrib"
-projects[location][version] = "3.0-rc5"
+projects[location][version] = "3.0-rc6"
 
 projects[mailsystem][subdir] = "contrib"
 projects[mailsystem][version] = "2.34"
@@ -77,7 +77,7 @@ projects[menu_token][subdir] = "contrib"
 projects[menu_token][version] = "1.0-beta5"
 
 projects[mimemail][subdir] = "contrib"
-projects[mimemail][version] = "1.0-alpha2"
+projects[mimemail][version] = "1.0-beta1"
 
 projects[pathauto][subdir] = "contrib"
 projects[pathauto][version] = "1.2"
@@ -86,7 +86,7 @@ projects[persistent_login][subdir] = "contrib"
 projects[persistent_login][version] = "1.0-beta1"
 
 projects[plupload][subdir] = "contrib"
-projects[plupload][version] = "1.3"
+projects[plupload][version] = "1.4"
 
 projects[privatemsg][subdir] = "contrib"
 projects[privatemsg][version] = "1.4"
