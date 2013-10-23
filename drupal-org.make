@@ -114,6 +114,7 @@ projects[votingapi][version] = "2.11"
 
 ; Themes
 projects[omega][version] = "3.1"
+projects[omega][patch][] = "https://drupal.org/files/relative-src-15.patch"
 
 ; Libraries
 libraries[mediaelement][download][type] = "get"
@@ -137,6 +138,7 @@ libraries[jquery.tooltip][download][url] = "http://jquery.bassistance.de/tooltip
 libraries[jquery.tooltip][directory_name] = "jquery.tooltip"
 
 libraries[plupload][download][type] = "get"
+libraries[plupload][destination] = "libraries"
 libraries[plupload][download][url] = "https://github.com/downloads/moxiecode/plupload/plupload_1_5_4.zip"
 libraries[plupload][directory_name] = "plupload"
-libraries[plupload][patch][] = "http://drupal.org/files/plupload-remove-examples-and-binaries-based-on-zip-2100581-4.patch"
+libraries[plupload][patch][] = "https://drupal.org/files/plupload-remove-examples-and-binaries-based-on-zip-2100581-4.patch"
